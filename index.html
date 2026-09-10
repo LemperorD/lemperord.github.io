@@ -85,7 +85,7 @@
         
   
     <h1 itemprop="name">
-      <a class="p-name article-title" href="/2026/09/10/how-to-use-colcon/">how-to-use-colcon</a>
+      <a class="p-name article-title" href="/2026/09/10/how-to-use-colcon/">如何优雅的使用&#34;colcon &amp; ament_cmake&#34;构建一个C++工程</a>
     </h1>
   
 
@@ -93,63 +93,624 @@
     
     <div class="e-content article-entry" itemprop="articleBody">
       
-        <p>尝试探索一些ROS2的进阶技巧,先从colcon开始~</p>
-<h1 id="1-colcon常用编译设置"><a href="#1-colcon常用编译设置" class="headerlink" title="1. colcon常用编译设置"></a>1. colcon常用编译设置</h1><h1 id="2-colcon常用环境变量"><a href="#2-colcon常用环境变量" class="headerlink" title="2. colcon常用环境变量"></a>2. colcon常用环境变量</h1><h1 id="3-如何优雅的引用一个工作空间内的功能报"><a href="#3-如何优雅的引用一个工作空间内的功能报" class="headerlink" title="3. 如何优雅的引用一个工作空间内的功能报"></a>3. 如何优雅的引用一个工作空间内的功能报</h1>
+        <h1 id="0-前言"><a href="#0-前言" class="headerlink" title="0. 前言"></a>0. 前言</h1><p>依据笔者之前的开发经验,每次开发完一个新功能包就开始头疼如何写cmake,LLM写的CMake又很容易报错,依赖agent更是会导致生成的cmake不像人样,甚至可能原本建立好的架构都会被agent无情拆分.</p>
+<p>在”colcon &amp; ament_cmake”这套c++包管理工具如此难用的同时,官方文档的维护亦不尽人意,colcon文档并未详细给出库的导出原则,ament_cmake&#x2F;ament_cmake_auto更是甩手掌柜,只有源代码仓库里面的一大堆cmake宏可以看.</p>
+<p>所以<strong>本博客旨在探索出一个使用”colcon &amp; ament_cmake”构建C++工程时的通用cmake模板</strong></p>
+<blockquote>
+<p>注: 本博客不讲解最基本的ROS工作空间相关的概念</p>
+<p>读者在实际使用的时候可以尝试直接将本博客复制给agent,保证生成代码的规范性</p>
+</blockquote>
+<h1 id="1-colcon常用编译设置"><a href="#1-colcon常用编译设置" class="headerlink" title="1. colcon常用编译设置"></a>1. colcon常用编译设置</h1><p>先简要陈述一下colcon的常用编译设置,新手基本上可以无脑使用这一段命令</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON</span><br></pre></td></tr></table></figure>
+
+<p>其中<code>--symlink-install</code>会将需要安装的文件(<code>lib</code>,<code>*.hpp</code>,<code>.yaml</code>等)以<strong>软链接</strong>形式安装进<code>install</code>文件夹,最大的作用就是可以在调参的时候不需要进行第二次编译(但其实只要参数使用原则约定得够好也不是很重要)</p>
+<p><code>--cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON</code>这一段可以在<code>build</code>文件夹生成一个名为<code>compile_commands.json</code>的文件,可以通过设置<code>.vscode</code>来实现代码高亮,很重要的功能</p>
+<h1 id="2-一个优雅的C-工程架构"><a href="#2-一个优雅的C-工程架构" class="headerlink" title="2. 一个优雅的C++工程架构"></a>2. 一个优雅的C++工程架构</h1><p>针对这个话题,C++开发者们众说纷纭,各执己见,这里笔者认为在”colcon &amp; ament_cmake”这套c++包管理工具构建的工程下比较好的架构</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">├── assets</span><br><span class="line">├── autostart</span><br><span class="line">├── build</span><br><span class="line">├── install</span><br><span class="line">├── <span class="built_in">log</span></span><br><span class="line">├── README.md</span><br><span class="line">├── scripts</span><br><span class="line">└── src</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>assets: 静态资源,存储图片,文档等,也可以存储一些传感器内外参,模型文件等很快调整好且长时间不会变的参数,一般的科研软件包主要是存储介绍论文的动图等</li>
+<li>autostart: 看你的项目需不需要自动启动</li>
+<li>build,install,log: 都是colcon自动生成的,这里不用一般c++工程中常用的bin文件夹来存储二进制文件,最主要的原因是<code>ros2 run</code>命令也不会费力到哪里去</li>
+<li>scripts: 存储脚本文件,包括但不限于各种<code>*.sh</code>文件,可用于程序启动,git维护,编译等多个功能</li>
+<li>src: <code>source code</code>的简称,存放源代码</li>
+</ul>
+<blockquote>
+<p>注: 至于对软件版本要求严格的项目,读者可以自行添加<code>cmake</code>文件夹来存放<code>*.cmake</code>文件以及<code>3rdparty</code>来存储固定版本的第三方软件</p>
+</blockquote>
+<h1 id="3-一个优雅的cmake模板"><a href="#3-一个优雅的cmake模板" class="headerlink" title="3. 一个优雅的cmake模板"></a>3. 一个优雅的cmake模板</h1><p>先给大家一个模板,后面来详细解释</p>
+<p>这份模板是<strong>显式风格(<code>ament_cmake</code>)</strong>,适合”依赖里有第三方库、又要导出给下游用”的包;如果你更偏好”只维护<code>package.xml</code>,其它交给宏”的自动化风格(<code>ament_cmake_auto</code>),它的等价模板在 §5.5,两套风格逐条命令的对照在 §5。想直接看”功能包该怎么划分”的话,跳到 §6。</p>
+<p>模板另一半是<code>package.xml</code>:<strong>CMake决定”编译期能拿到什么”,<code>package.xml</code>决定”colcon按什么顺序编、rosdep装哪个包”</strong>,两边对不上时的经典症状是”单独编某个包能过,全量<code>colcon build</code>就顺序错乱”</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">cmake_minimum_required</span>(VERSION <span class="number">3.8</span>)</span><br><span class="line"><span class="keyword">project</span>(detection)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span>(CMAKE_COMPILER_IS_GNUCXX <span class="keyword">OR</span> CMAKE_CXX_COMPILER_ID <span class="keyword">MATCHES</span> <span class="string">&quot;Clang&quot;</span>)</span><br><span class="line">  <span class="keyword">add_compile_options</span>(-Wall -Wextra -Wpedantic)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span>(<span class="keyword">NOT</span> CMAKE_CXX_STANDARD)</span><br><span class="line">  <span class="keyword">set</span>(CMAKE_CXX_STANDARD <span class="number">17</span>)</span><br><span class="line">  <span class="keyword">set</span>(CMAKE_CXX_STANDARD_REQUIRED <span class="keyword">ON</span>)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># 依赖:ament_cmake(构建系统) + 上游功能包(会带来 libUsbCam.so) + 第三方库</span></span><br><span class="line"><span class="comment"># </span></span><br><span class="line"><span class="keyword">find_package</span>(ament_cmake REQUIRED)</span><br><span class="line"><span class="keyword">find_package</span>(driver REQUIRED)          <span class="comment"># 上游包:driver::UsbCam -&gt; libUsbCam.so</span></span><br><span class="line"><span class="keyword">find_package</span>(common_libs REQUIRED)     <span class="comment"># 上游基础库:common_libs::common_libs</span></span><br><span class="line"><span class="keyword">find_package</span>(ament_index_cpp REQUIRED) <span class="comment"># 运行时定位本包 share/ 目录</span></span><br><span class="line"><span class="keyword">find_package</span>(OpenCV REQUIRED)</span><br><span class="line"><span class="keyword">find_package</span>(Threads REQUIRED)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">add_library</span>(detection_core SHARED</span><br><span class="line">  src/camera_grabber.cpp</span><br><span class="line">)</span><br><span class="line"><span class="keyword">set_target_properties</span>(detection_core PROPERTIES</span><br><span class="line">  POSITION_INDEPENDENT_CODE <span class="keyword">ON</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">target_include_directories</span>(detection_core PUBLIC</span><br><span class="line">  $&lt;BUILD_INTERFACE:<span class="variable">$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;</span>/<span class="keyword">include</span>&gt;</span><br><span class="line">  $&lt;INSTALL_INTERFACE:<span class="keyword">include</span>&gt;</span><br><span class="line">)</span><br><span class="line"><span class="comment"># PUBLIC:链接本库的下游会自动继承 libUsbCam.so、libcommon_libs.so 与 OpenCV 的依赖,</span></span><br><span class="line"><span class="comment"># 不必在自己包里重复写一遍。</span></span><br><span class="line"><span class="keyword">target_link_libraries</span>(detection_core PUBLIC</span><br><span class="line">  driver::UsbCam</span><br><span class="line">  common_libs::common_libs</span><br><span class="line">  <span class="variable">$&#123;OpenCV_LIBS&#125;</span></span><br><span class="line">  Threads::Threads</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">add_executable</span>(usb_camera_demo</span><br><span class="line">  src/usb_camera_demo.cpp</span><br><span class="line">)</span><br><span class="line"><span class="comment"># 把源码树里的配置目录编进去,作为 ament index 取不到 share/ 时的兜底路径</span></span><br><span class="line"><span class="keyword">target_compile_definitions</span>(usb_camera_demo PRIVATE</span><br><span class="line">  DETECTION_SOURCE_CONFIG_DIR=<span class="string">&quot;$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/config&quot;</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">target_link_libraries</span>(usb_camera_demo</span><br><span class="line">  detection_core</span><br><span class="line">  ament_index_cpp::ament_index_cpp</span><br><span class="line">  <span class="variable">$&#123;OpenCV_LIBS&#125;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---------------------------------------------------------------------------</span></span><br><span class="line"><span class="comment"># 安装:库 / 可执行 / 头文件 / 配置</span></span><br><span class="line"><span class="comment">#   * 库与可执行都用 EXPORT 登记,供 install 后导出给下游 find_package(detection)</span></span><br><span class="line"><span class="comment">#   * RUNTIME 装到 lib/$&#123;PROJECT_NAME&#125;,这样 `ros2 run detection usb_camera_demo` 可用</span></span><br><span class="line"><span class="comment"># ---------------------------------------------------------------------------</span></span><br><span class="line"><span class="keyword">install</span>(TARGETS</span><br><span class="line">  detection_core</span><br><span class="line">  usb_camera_demo</span><br><span class="line">  <span class="keyword">EXPORT</span> <span class="variable">$&#123;PROJECT_NAME&#125;</span>_export</span><br><span class="line">  ARCHIVE DESTINATION lib</span><br><span class="line">  LIBRARY DESTINATION lib</span><br><span class="line">  RUNTIME DESTINATION lib/<span class="variable">$&#123;PROJECT_NAME&#125;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">install</span>(DIRECTORY <span class="keyword">include</span>/</span><br><span class="line">  DESTINATION <span class="keyword">include</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">install</span>(DIRECTORY config/</span><br><span class="line">  DESTINATION share/<span class="variable">$&#123;PROJECT_NAME&#125;</span>/config</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---------------------------------------------------------------------------</span></span><br><span class="line"><span class="comment"># 导出:让下游包能 find_package(detection) 并链接 detection::detection_core</span></span><br><span class="line"><span class="comment">#   同时把传递依赖(driver / OpenCV)写进 config,下游才能解析出 UsbCam 头文件</span></span><br><span class="line"><span class="comment">#   与库路径。</span></span><br><span class="line"><span class="comment"># ---------------------------------------------------------------------------</span></span><br><span class="line">ament_export_targets(<span class="variable">$&#123;PROJECT_NAME&#125;</span>_export HAS_LIBRARY_TARGET)</span><br><span class="line">ament_export_include_directories(<span class="keyword">include</span>)</span><br><span class="line">ament_export_dependencies(driver common_libs OpenCV)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---------------------------------------------------------------------------</span></span><br><span class="line"><span class="comment"># 测试:gtest 单测(不需要真实相机) + ament 代码规范 lint</span></span><br><span class="line"><span class="comment"># ---------------------------------------------------------------------------</span></span><br><span class="line"><span class="keyword">if</span>(BUILD_TESTING)</span><br><span class="line">  <span class="keyword">find_package</span>(ament_cmake_gtest REQUIRED)</span><br><span class="line">  ament_add_gtest(camera_grabber_test <span class="keyword">test</span>/camera_grabber_test.cpp)</span><br><span class="line">  <span class="keyword">target_link_libraries</span>(camera_grabber_test detection_core)</span><br><span class="line">  <span class="keyword">target_compile_definitions</span>(camera_grabber_test PRIVATE</span><br><span class="line">    DETECTION_TEST_CONFIG=<span class="string">&quot;$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/config/cameras.yaml&quot;</span></span><br><span class="line">  )</span><br><span class="line"></span><br><span class="line">  <span class="keyword">find_package</span>(ament_lint_auto REQUIRED)</span><br><span class="line">  <span class="comment"># 排除 lint 项要用 AMENT_LINT_AUTO_EXCLUDE(Humble 起的正式接口);</span></span><br><span class="line">  <span class="comment"># 包模板里的 set(ament_cmake_copyright_FOUND TRUE) 是旧写法,不可靠。</span></span><br><span class="line">  <span class="keyword">set</span>(AMENT_LINT_AUTO_EXCLUDE</span><br><span class="line">    ament_cmake_copyright</span><br><span class="line">    ament_cmake_cpplint</span><br><span class="line">  )</span><br><span class="line">  ament_lint_auto_find_test_dependencies()</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line">ament_package()</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>配套的<code>package.xml</code>(和上面那个包一一对应):</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?xml version=<span class="string">&quot;1.0&quot;</span>?&gt;</span></span><br><span class="line"><span class="meta">&lt;?xml-model href=<span class="string">&quot;http://download.ros.org/schema/package_format3.xsd&quot;</span> schematypens=<span class="string">&quot;http://www.w3.org/2001/XMLSchema&quot;</span>?&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">package</span> <span class="attr">format</span>=<span class="string">&quot;3&quot;</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">name</span>&gt;</span>detection<span class="tag">&lt;/<span class="name">name</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">version</span>&gt;</span>0.0.0<span class="tag">&lt;/<span class="name">version</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">description</span>&gt;</span>一句话说明这个包干什么<span class="tag">&lt;/<span class="name">description</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">maintainer</span> <span class="attr">email</span>=<span class="string">&quot;you@example.com&quot;</span>&gt;</span>you<span class="tag">&lt;/<span class="name">maintainer</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">license</span>&gt;</span>Apache-2.0<span class="tag">&lt;/<span class="name">license</span>&gt;</span></span><br><span class="line"></span><br><span class="line">  <span class="comment">&lt;!-- 构建工具:换成 ament_cmake_auto 时这里也要跟着换(见 §5.5) --&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">buildtool_depend</span>&gt;</span>ament_cmake<span class="tag">&lt;/<span class="name">buildtool_depend</span>&gt;</span></span><br><span class="line"></span><br><span class="line">  <span class="tag">&lt;<span class="name">depend</span>&gt;</span>driver<span class="tag">&lt;/<span class="name">depend</span>&gt;</span>            <span class="comment">&lt;!-- 上游功能包:链接 + 保证 colcon 先编 driver --&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">depend</span>&gt;</span>common_libs<span class="tag">&lt;/<span class="name">depend</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">depend</span>&gt;</span>ament_index_cpp<span class="tag">&lt;/<span class="name">depend</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">depend</span>&gt;</span>libopencv-dev<span class="tag">&lt;/<span class="name">depend</span>&gt;</span>     <span class="comment">&lt;!-- 第三方:写 rosdep key,不是 CMake 包名 --&gt;</span></span><br><span class="line"></span><br><span class="line">  <span class="tag">&lt;<span class="name">test_depend</span>&gt;</span>ament_cmake_gtest<span class="tag">&lt;/<span class="name">test_depend</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">test_depend</span>&gt;</span>ament_lint_auto<span class="tag">&lt;/<span class="name">test_depend</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">test_depend</span>&gt;</span>ament_lint_common<span class="tag">&lt;/<span class="name">test_depend</span>&gt;</span></span><br><span class="line"></span><br><span class="line">  <span class="tag">&lt;<span class="name">export</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">build_type</span>&gt;</span>ament_cmake<span class="tag">&lt;/<span class="name">build_type</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;/<span class="name">export</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">package</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<h1 id="4-模板逐段拆解"><a href="#4-模板逐段拆解" class="headerlink" title="4. 模板逐段拆解"></a>4. 模板逐段拆解</h1><p>模板能直接抄,但抄的时候不知道自己抄了什么,下次改需求还是会卡。这一节把模板拆成若干块,每块讲清楚<code>为什么这么写</code>以及<code>换个写法会怎样</code></p>
+<h2 id="4-1-地基-版本、包名与编译选项"><a href="#4-1-地基-版本、包名与编译选项" class="headerlink" title="4.1 地基:版本、包名与编译选项"></a>4.1 地基:版本、包名与编译选项</h2><figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">cmake_minimum_required</span>(VERSION <span class="number">3.8</span>)</span><br><span class="line"><span class="keyword">project</span>(detection)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>cmake_minimum_required(VERSION 3.8)</code>:<code>ament_cmake</code>的宏最低要求3.8,低于它<code>install(EXPORT)</code>的默认策略与ament的假设不一致。写更高版本(比如3.16)也没问题,Ubuntu 22.04(Humble官方环境)自带CMake 3.22</li>
+<li><code>project(detection)</code>:这个名字<strong>必须和<code>package.xml</code>里的<code>&lt;name&gt;</code>一字不差</strong>。它决定了<code>${PROJECT_NAME}</code>、安装目录<code>share/detection</code>以及ament索引里的包名;不一致的典型症状是<code>ros2 run</code>找不到包、<code>ament_index_cpp</code>查不到share目录</li>
+</ul>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span>(CMAKE_COMPILER_IS_GNUCXX <span class="keyword">OR</span> CMAKE_CXX_COMPILER_ID <span class="keyword">MATCHES</span> <span class="string">&quot;Clang&quot;</span>)</span><br><span class="line">  <span class="keyword">add_compile_options</span>(-Wall -Wextra -Wpedantic)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span>(<span class="keyword">NOT</span> CMAKE_CXX_STANDARD)</span><br><span class="line">  <span class="keyword">set</span>(CMAKE_CXX_STANDARD <span class="number">17</span>)</span><br><span class="line">  <span class="keyword">set</span>(CMAKE_CXX_STANDARD_REQUIRED <span class="keyword">ON</span>)</span><br><span class="line"><span class="keyword">endif</span>()</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>add_compile_options</code>是<strong>目录级</strong>的,本目录及子目录下所有目标都会带上;只想给某一个目标加,用<code>target_compile_options(&lt;target&gt; PRIVATE -Wall)</code></li>
+<li><code>if(NOT CMAKE_CXX_STANDARD)</code>先判空,是为了让命令行的<code>-DCMAKE_CXX_STANDARD=20</code>能覆盖模板里的默认值;直接<code>set(CMAKE_CXX_STANDARD 17)</code>会把命令行传进来的值顶掉,临时试C++20特性的时候会很难受</li>
+<li><code>CMAKE_CXX_STANDARD_REQUIRED ON</code>表示”编译器不支持这个标准就直接报错”,而不是悄悄降级到旧标准去编。Humble官方包统一是C++17</li>
+</ul>
+<h2 id="4-2-依赖-三类find-package-以及和package-xml的分工"><a href="#4-2-依赖-三类find-package-以及和package-xml的分工" class="headerlink" title="4.2 依赖:三类find_package,以及和package.xml的分工"></a>4.2 依赖:三类<code>find_package</code>,以及和<code>package.xml</code>的分工</h2><p>模板里那几行<code>find_package</code>其实分成三类,每一类在<code>package.xml</code>里的对应写法都不一样:</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>CMake侧</th>
+<th>package.xml侧</th>
+<th>例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>构建系统</td>
+<td><code>find_package(ament_cmake REQUIRED)</code></td>
+<td><code>&lt;buildtool_depend&gt;ament_cmake&lt;/buildtool_depend&gt;</code></td>
+<td>每个包都要</td>
+</tr>
+<tr>
+<td>上游功能包</td>
+<td><code>find_package(driver REQUIRED)</code></td>
+<td><code>&lt;depend&gt;driver&lt;/depend&gt;</code></td>
+<td><code>driver</code>、<code>common_libs</code></td>
+</tr>
+<tr>
+<td>第三方库</td>
+<td><code>find_package(OpenCV REQUIRED)</code></td>
+<td><code>&lt;depend&gt;libopencv-dev&lt;/depend&gt;</code></td>
+<td>OpenCV、Eigen、yaml-cpp</td>
+</tr>
+<tr>
+<td>标准库设施</td>
+<td><code>find_package(Threads REQUIRED)</code></td>
+<td>一般不写</td>
+<td><code>Threads::Threads</code></td>
+</tr>
+</tbody></table>
+<p>两边的分工要分清:</p>
+<ul>
+<li><code>package.xml</code>是给<strong>colcon和rosdep</strong>看的:colcon靠它排构建顺序(先编<code>driver</code>再编<code>detection</code>),<code>rosdep install --from-paths src --ignore-src -r -y</code>靠它装系统依赖,这里的名字是<strong>rosdep key</strong></li>
+<li><code>find_package</code>是给<strong>CMake</strong>看的:它才决定编译期能拿到哪些头文件路径和库,这里的名字是<strong>CMake包名</strong></li>
+</ul>
+<p><strong>rosdep key和CMake包名经常不是一回事</strong>,这是新手最容易漏的一环。实测:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">find_package</span>(OpenCV)        <span class="comment"># 成功,配置在 /usr/lib/x86_64-linux-gnu/cmake/opencv4/</span></span><br><span class="line"><span class="keyword">find_package</span>(opencv)        <span class="comment"># 失败</span></span><br><span class="line"><span class="keyword">find_package</span>(libopencv-dev) <span class="comment"># 失败(这是rosdep key,不是CMake包名)</span></span><br><span class="line"><span class="keyword">find_package</span>(Eigen3)        <span class="comment"># 成功</span></span><br><span class="line"><span class="keyword">find_package</span>(eigen)         <span class="comment"># 失败(rosdep key叫eigen,CMake包名叫Eigen3)</span></span><br></pre></td></tr></table></figure>
+
+<p>所以显式风格里两处都得写。而<code>ament_cmake_auto</code>的自动<code>find_package</code>只对”rosdep key恰好等于CMake包名”的包有效(<code>rclcpp</code>、<code>sensor_msgs</code>、<code>ament_index_cpp</code>这类ROS包基本都符合),<code>OpenCV</code>这种必须自己手写</p>
+<p><code>REQUIRED</code>建议都加上:依赖找不到就该在配置阶段停下来,而不是留到链接期报一堆<code>undefined reference</code>;真正可选的依赖才用<code>QUIET</code>并自己判<code>_FOUND</code></p>
+<p>依赖的书写顺序建议固定为:构建系统 → 上游功能包 → 第三方 → 标准库,模板里就是这个顺序</p>
+<h2 id="4-3-生成目标-库与可执行"><a href="#4-3-生成目标-库与可执行" class="headerlink" title="4.3 生成目标:库与可执行"></a>4.3 生成目标:库与可执行</h2><p>显式风格就是标准CMake:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">add_library</span>(detection_core SHARED</span><br><span class="line">  src/camera_grabber.cpp</span><br><span class="line">)</span><br><span class="line"><span class="keyword">add_executable</span>(usb_camera_demo</span><br><span class="line">  src/usb_camera_demo.cpp</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>几个容易踩的点:</p>
+<ul>
+<li><strong>不写<code>SHARED</code>&#x2F;<code>STATIC</code>时默认是STATIC</strong>(<code>BUILD_SHARED_LIBS</code>没打开的话),要动态库就明确写<code>SHARED</code></li>
+<li>源文件建议<strong>一个个列出来</strong>,不要<code>file(GLOB)</code>:glob的结果在configure阶段就定死了,新增<code>.cpp</code>不会触发重新配置,现象就是”文件明明加了却没编进去”。<code>ament_auto_add_library</code>的<code>DIRECTORY</code>参数内部也是<code>file(GLOB_RECURSE)</code>,同样有这个毛病</li>
+<li><strong>PIC</strong>:<code>SHARED</code>&#x2F;<code>MODULE</code>目标CMake默认就开<code>POSITION_INDEPENDENT_CODE</code>;<code>STATIC</code>目标默认不开,而这个静态库一旦被链接进别人的<code>.so</code>,就会报<code>relocation R_X86_64_PC32 ... can not be used when making a shared object</code>。模板里那句<code>set_target_properties(... POSITION_INDEPENDENT_CODE ON)</code>就是为这种情况准备的,一般不亏</li>
+</ul>
+<p>然后是每个库都要写的两段:头文件接口和依赖接口</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">target_include_directories</span>(detection_core PUBLIC</span><br><span class="line">  $&lt;BUILD_INTERFACE:<span class="variable">$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;</span>/<span class="keyword">include</span>&gt;</span><br><span class="line">  $&lt;INSTALL_INTERFACE:<span class="keyword">include</span>&gt;</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p><code>PUBLIC</code>表示”我自己要用,链接我的下游也要用”,所以必须写成生成器表达式,把”编译期用源码树路径”和”安装后用<code>&lt;prefix&gt;/include</code>“分开。只写裸路径<code>${CMAKE_CURRENT_SOURCE_DIR}/include</code>的话,<strong>一旦后面要<code>install(EXPORT)</code>导出这个目标,CMake直接报错</strong>(详见§5.6坑1)</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">target_link_libraries</span>(detection_core PUBLIC</span><br><span class="line">  driver::UsbCam</span><br><span class="line">  common_libs::common_libs</span><br><span class="line">  <span class="variable">$&#123;OpenCV_LIBS&#125;</span></span><br><span class="line">  Threads::Threads</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>这里的<code>PUBLIC</code>是”我用了,而且这个依赖出现在我的公开头文件里,下游要一起继承”。写成<code>PUBLIC</code>之后,下游只要链接<code>detection_core</code>,就自动拿到了<code>UsbCam</code>、<code>common_libs</code>和OpenCV,不用重复写一遍。判断标准很简单:<strong>公开头文件里<code>#include</code>了谁的类就写<code>PUBLIC</code></strong>;只在<code>.cpp</code>里用到的写<code>PRIVATE</code>(日志、内部实现的算法库都是这类)</p>
+<p>同一个目标上,<code>target_link_libraries</code>要么全用关键字形式(<code>PUBLIC</code>&#x2F;<code>PRIVATE</code>&#x2F;<code>INTERFACE</code>),要么全用不带关键字的老形式,混着写一定报错,实测报错原文:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">CMake Error at CMakeLists.txt:6 (target_link_libraries):</span><br><span class="line">  The keyword signature for target_link_libraries has already been used with</span><br><span class="line">  the target &quot;a&quot;.  All uses of target_link_libraries with a target must be</span><br><span class="line">  either all-keyword or all-plain.</span><br></pre></td></tr></table></figure>
+
+<p>除了链接,还有一些编译期的配置,模板里出现在可执行上:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">target_compile_definitions</span>(usb_camera_demo PRIVATE</span><br><span class="line">  DETECTION_SOURCE_CONFIG_DIR=<span class="string">&quot;$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/config&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p><code>PRIVATE</code>表示这个宏只给本目标用。把源码树里的<code>config</code>路径编进去,是为了在<code>share/</code>取不到配置时有个兜底(安装之后正常路径应该走ament index,见§4.5)</p>
+<h2 id="4-4-引用别人的库-三种写法"><a href="#4-4-引用别人的库-三种写法" class="headerlink" title="4.4 引用别人的库:三种写法"></a>4.4 引用别人的库:三种写法</h2><p>这块是”能编过”和”编对”的分水岭。下游引用上游提供的库,一共三种写法</p>
+<p><strong>写法一:现代namespaced目标(推荐)</strong></p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">find_package</span>(driver REQUIRED)</span><br><span class="line"><span class="keyword">target_link_libraries</span>(detection_core PUBLIC driver::UsbCam)</span><br></pre></td></tr></table></figure>
+
+<p><code>driver::UsbCam</code>是一个<code>IMPORTED</code>目标,由上游的<code>install(TARGETS ... EXPORT ...)</code>+<code>ament_export_targets</code>生成。它的好处是<strong>自带头文件路径、编译定义和传递依赖</strong>,你不需要知道上游的头文件装在哪、它还依赖谁。命名空间默认是<code>&lt;包名&gt;::</code>,所以上游包叫<code>driver</code>、库目标叫<code>UsbCam</code>,你这边写的就是<code>driver::UsbCam</code></p>
+<p><strong>写法二:ROS传统宏<code>ament_target_dependencies</code></strong></p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">find_package</span>(rclcpp REQUIRED)</span><br><span class="line"><span class="keyword">find_package</span>(sensor_msgs REQUIRED)</span><br><span class="line">ament_target_dependencies(my_node rclcpp sensor_msgs)</span><br></pre></td></tr></table></figure>
+
+<p>它做的事是把这些ROS包的include路径、库、编译定义一次性挂到目标上。三条规则要记住:</p>
+<ol>
+<li>参数里的包<strong>必须已经<code>find_package</code>过</strong>,否则直接<code>FATAL_ERROR:the passed package name &#39;xxx&#39; was not found before</code></li>
+<li>关键字只能写在包名<strong>前面</strong>:<code>ament_target_dependencies(my_node SYSTEM rclcpp)</code>;写成<code>ament_target_dependencies(my_node rclcpp SYSTEM)</code>会报<code>SYSTEM keyword is only allowed before the package names</code></li>
+<li>它内部用的是<strong>不带关键字</strong>的<code>target_link_libraries</code>,所以同一个目标上不要再写关键字版(就是§4.3里那个<code>all-keyword or all-plain</code>报错)。<strong>传统写法与现代写法二选一,不要混</strong></li>
+</ol>
+<p>另外一个细节:现代ROS包同时提供<code>${pkg}_TARGETS</code>(导入目标)和<code>${pkg}_LIBRARIES</code>(旧的绝对路径列表),<code>ament_target_dependencies</code>会<strong>优先用<code>${pkg}_TARGETS</code></strong>,只有在对方没导出目标时才回退到旧变量。这就是为什么有些包写<code>ament_target_dependencies</code>就够了,而有些老包还是得靠<code>${pkg}_LIBRARIES</code></p>
+<p><strong>写法三:旧式变量</strong></p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">find_package</span>(driver REQUIRED)</span><br><span class="line"><span class="keyword">target_link_libraries</span>(detection_core PUBLIC <span class="variable">$&#123;driver_LIBRARIES&#125;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>只有当上游<strong>只做了<code>ament_export_libraries</code></strong>(没导出namespaced目标)时才需要这么写。<code>${pkg}_LIBRARIES</code>是一串绝对路径,拿不到传递依赖和编译定义,信息量比写法一少一大截。<code>ament_cmake_auto</code>的<code>ament_auto_package()</code>默认就走这条路(见§5.4)</p>
+<blockquote>
+<p>注:第三方库(OpenCV&#x2F;Eigen&#x2F;yaml-cpp&#x2F;CUDA&#x2F;Threads)建议一律用<code>target_link_libraries</code>引用:<code>${OpenCV_LIBS}</code>、<code>Eigen3::Eigen</code>、<code>yaml-cpp</code>、<code>CUDA::cudart</code>、<code>Threads::Threads</code>。<code>ament_target_dependencies</code>走的是<code>${pkg}_INCLUDE_DIRS</code>&#x2F;<code>${pkg}_LIBRARIES</code>这套约定,能不能用完全取决于对方提供了什么变量:OpenCV恰好两套都有(<code>OpenCV_INCLUDE_DIRS</code>+<code>OpenCV_LIBRARIES</code>)所以能work,而Eigen3只提供了<code>EIGEN3_INCLUDE_DIRS</code>(全大写,对不上<code>Eigen3_INCLUDE_DIRS</code>)和导入目标<code>Eigen3::Eigen</code>,用<code>ament_target_dependencies(t Eigen3)</code>会<strong>静默地什么都不链接</strong>,然后你在编译期愉快地收获”找不到Eigen&#x2F;Core”。不确定的时候用<code>target_link_libraries</code>最不容易出错</p>
+</blockquote>
+<h2 id="4-5-安装-装到哪ros2-run才找得到"><a href="#4-5-安装-装到哪ros2-run才找得到" class="headerlink" title="4.5 安装:装到哪ros2 run才找得到"></a>4.5 安装:装到哪<code>ros2 run</code>才找得到</h2><figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">install</span>(TARGETS</span><br><span class="line">  detection_core</span><br><span class="line">  usb_camera_demo</span><br><span class="line">  <span class="keyword">EXPORT</span> <span class="variable">$&#123;PROJECT_NAME&#125;</span>_export</span><br><span class="line">  ARCHIVE DESTINATION lib</span><br><span class="line">  LIBRARY DESTINATION lib</span><br><span class="line">  RUNTIME DESTINATION lib/<span class="variable">$&#123;PROJECT_NAME&#125;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>ARCHIVE</code>&#x3D;静态库(<code>.a</code>),<code>LIBRARY</code>&#x3D;动态库(<code>.so</code>),<code>RUNTIME</code>&#x3D;可执行文件(以及Windows下的<code>.dll</code>)。三个都写一遍是最省事的写法,哪怕现在只产出动态库</li>
+<li>可执行装到<code>lib/${PROJECT_NAME}/</code>而不是<code>bin/</code>,是因为<code>ros2 run &lt;pkg&gt; &lt;exe&gt;</code>就是按这个路径去找的;想让可执行进<code>PATH</code>,把<code>RUNTIME DESTINATION</code>改成<code>bin</code>即可</li>
+<li><code>EXPORT ${PROJECT_NAME}_export</code>把这两个目标登记进一个”导出集合”,等会<code>ament_export_targets</code>才会把它写进<code>share/&lt;pkg&gt;/cmake/</code>。<strong>少了这一步,下游<code>find_package(detection)</code>能成功,但拿不到<code>detection::detection_core</code></strong>——这是最常见的”导出了个寂寞”</li>
+</ul>
+<p>资源文件按同样的思路装:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">install</span>(DIRECTORY <span class="keyword">include</span>/</span><br><span class="line">  DESTINATION <span class="keyword">include</span></span><br><span class="line">)</span><br><span class="line"><span class="keyword">install</span>(DIRECTORY config/</span><br><span class="line">  DESTINATION share/<span class="variable">$&#123;PROJECT_NAME&#125;</span>/config</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>目录后面的<strong>斜杠很关键</strong>:<code>config/</code>表示”把<code>config</code>里面的内容装过去”(得到<code>share/detection/config/cameras.yaml</code>);写成<code>config</code>(不带斜杠)会得到<code>share/detection/config/config/cameras.yaml</code></li>
+<li>头文件、config、launch、rviz配置这些运行时资源,统一装到<code>share/${PROJECT_NAME}/</code>下面;代码里用<code>ament_index_cpp::get_package_share_directory(&quot;detection&quot;)</code>取路径,<strong>不要拼绝对路径</strong>(换机器、换安装前缀都会崩)。模板里<code>find_package(ament_index_cpp REQUIRED)</code>就是为了这个,它导出的是现代目标,链接<code>ament_index_cpp::ament_index_cpp</code>即可</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>产物</th>
+<th>写法</th>
+<th>落地路径</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>动态库</td>
+<td><code>LIBRARY DESTINATION lib</code></td>
+<td><code>install/&lt;pkg&gt;/lib/libdetection_core.so</code></td>
+</tr>
+<tr>
+<td>静态库</td>
+<td><code>ARCHIVE DESTINATION lib</code></td>
+<td><code>install/&lt;pkg&gt;/lib/libX.a</code></td>
+</tr>
+<tr>
+<td>可执行(<code>ros2 run</code>用)</td>
+<td><code>RUNTIME DESTINATION lib/${PROJECT_NAME}</code></td>
+<td><code>install/&lt;pkg&gt;/lib/&lt;pkg&gt;/usb_camera_demo</code></td>
+</tr>
+<tr>
+<td>可执行(进<code>PATH</code>)</td>
+<td><code>RUNTIME DESTINATION bin</code></td>
+<td><code>install/&lt;pkg&gt;/bin/&lt;exe&gt;</code></td>
+</tr>
+<tr>
+<td>头文件</td>
+<td><code>install(DIRECTORY include/ DESTINATION include)</code></td>
+<td><code>install/&lt;pkg&gt;/include/&lt;pkg&gt;/*.hpp</code></td>
+</tr>
+<tr>
+<td>参数&#x2F;配置</td>
+<td><code>share/${PROJECT_NAME}/config</code></td>
+<td><code>install/&lt;pkg&gt;/share/&lt;pkg&gt;/config/*.yaml</code></td>
+</tr>
+<tr>
+<td>launch</td>
+<td><code>share/${PROJECT_NAME}/launch</code></td>
+<td><code>install/&lt;pkg&gt;/share/&lt;pkg&gt;/launch/*.py</code></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>注:<code>--symlink-install</code>时这些安装出来的文件是指向源码树的软链接,所以改<code>*.yaml</code>不用重编,这也是§1里那条命令最大的价值</p>
+</blockquote>
+<h2 id="4-6-导出-让下游能用你"><a href="#4-6-导出-让下游能用你" class="headerlink" title="4.6 导出:让下游能用你"></a>4.6 导出:让下游能用你</h2><p>导出只有三行,但决定了别人<code>find_package</code>你之后能拿到什么:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">ament_export_targets(<span class="variable">$&#123;PROJECT_NAME&#125;</span>_export HAS_LIBRARY_TARGET)</span><br><span class="line">ament_export_include_directories(<span class="keyword">include</span>)</span><br><span class="line">ament_export_dependencies(driver common_libs OpenCV)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>ament_export_targets(&lt;export名&gt; HAS_LIBRARY_TARGET)</code>:把<code>install(TARGETS ... EXPORT &lt;export名&gt;)</code>登记的集合装成<code>share/&lt;pkg&gt;/cmake/&lt;export名&gt;Export.cmake</code>,并自动加上<code>&lt;pkg&gt;::</code>命名空间。<code>HAS_LIBRARY_TARGET</code>告诉ament”这里面有真的库文件”,它会额外注册环境钩子,让非merged安装下的<code>lib</code>目录进运行期搜索路径</li>
+<li><code>ament_export_include_directories(include)</code>:让下游的<code>&lt;pkg&gt;_INCLUDE_DIRS</code>里有你的头文件目录。注意这里的目录要和install的一致:<code>install(DIRECTORY include/ DESTINATION include)</code>对应<code>include</code></li>
+<li><code>ament_export_dependencies(...)</code>:<strong>传递依赖</strong>,这是最容易漏的一行。你的公开头文件里<code>#include &quot;driver/usb_cam.hpp&quot;</code>,下游编译时也需要<code>driver</code>的头文件;不写这行,下游会直接报”找不到<code>driver/usb_cam.hpp</code>“,或者报找不到OpenCV的头。原则是:<strong>公开头文件里出现过的依赖,都要在这里导出</strong></li>
+</ul>
+<p>导出写完,下游的消费方式就固定了:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">find_package</span>(detection REQUIRED)</span><br><span class="line"><span class="keyword">target_link_libraries</span>(my_lib PUBLIC detection::detection_core)   <span class="comment"># 现代写法</span></span><br><span class="line"><span class="comment"># 或者:ament_target_dependencies(my_lib detection)               # 传统写法</span></span><br></pre></td></tr></table></figure>
+
+<p>装完之后想确认导出到底成没成,三条命令足够:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">ls</span> install/detection/share/detection/cmake/       <span class="comment"># 应有 detectionConfig.cmake 与 detection_exportExport.cmake</span></span><br><span class="line">nm -DC --defined-only install/detection/lib/libdetection_core.so | <span class="built_in">head</span>   <span class="comment"># 符号确实导出了</span></span><br><span class="line">ldd install/detection/lib/libdetection_core.so | grep -E <span class="string">&quot;UsbCam|common_libs&quot;</span>  <span class="comment"># 运行期依赖挂上了</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="4-7-测试与lint"><a href="#4-7-测试与lint" class="headerlink" title="4.7 测试与lint"></a>4.7 测试与lint</h2><p>模板里测试这段照抄就行,两个细节值得说:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span>(BUILD_TESTING)</span><br><span class="line">  <span class="keyword">find_package</span>(ament_cmake_gtest REQUIRED)</span><br><span class="line">  ament_add_gtest(camera_grabber_test <span class="keyword">test</span>/camera_grabber_test.cpp)</span><br><span class="line">  <span class="keyword">target_link_libraries</span>(camera_grabber_test detection_core)</span><br><span class="line">  <span class="keyword">target_compile_definitions</span>(camera_grabber_test PRIVATE</span><br><span class="line">    DETECTION_TEST_CONFIG=<span class="string">&quot;$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/config/cameras.yaml&quot;</span></span><br><span class="line">  )</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>ament_add_gtest</code>会自动建目标、链接gtest、并把用例注册进CTest,所以”链接被测的库”这一步要你自己补。测试同样可以用<code>target_compile_definitions</code>把测试数据路径编进去,这样从哪个目录跑<code>ctest</code>都不怕</li>
+<li>lint的排除项要用<code>AMENT_LINT_AUTO_EXCLUDE</code>:</li>
+</ul>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">find_package</span>(ament_lint_auto REQUIRED)</span><br><span class="line"><span class="keyword">set</span>(AMENT_LINT_AUTO_EXCLUDE</span><br><span class="line">  ament_cmake_copyright</span><br><span class="line">  ament_cmake_cpplint</span><br><span class="line">)</span><br><span class="line">ament_lint_auto_find_test_dependencies()</span><br></pre></td></tr></table></figure>
+
+<p>ROS 2包模板里自带的<code>set(ament_cmake_copyright_FOUND TRUE)</code>是<strong>旧写法</strong>,它只在”该linter包还没被<code>find_package</code>过”的时候才碰巧生效;顺序一变(比如先调了<code>ament_auto_find_test_dependencies()</code>把包找进来)就失效,copyright&#x2F;cpplint用例照样注册、照样失败。Humble起请统一用<code>AMENT_LINT_AUTO_EXCLUDE</code></p>
+<p>跑测试:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">colcon <span class="built_in">test</span> --packages-select detection &amp;&amp; colcon test-result --verbose</span><br><span class="line">ament_uncrustify --reformat src/ include/ <span class="built_in">test</span>/   <span class="comment"># 格式不过就自动改,别手改</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="4-8-收尾-ament-package"><a href="#4-8-收尾-ament-package" class="headerlink" title="4.8 收尾:ament_package()"></a>4.8 收尾:<code>ament_package()</code></h2><p><code>ament_package()</code>负责生成<code>&lt;pkg&gt;Config.cmake</code>、<code>&lt;pkg&gt;Config-version.cmake</code>、环境脚本(<code>local_setup.sh</code>等)以及ament索引里那条包记录。它<strong>必须是最后一行</strong>,而且所有的<code>ament_export_*</code>都要在它之前调用(否则报<code>must be called before ament_package()</code>)</p>
+<blockquote>
+<p>注:用<code>ament_cmake_auto</code>时这一步由<code>ament_auto_package()</code>代劳,<strong>不要再手写<code>ament_package()</code></strong>,否则会重复生成</p>
+</blockquote>
+<h1 id="5-ament-cmake与ament-cmake-auto-同一条命令的两种写法"><a href="#5-ament-cmake与ament-cmake-auto-同一条命令的两种写法" class="headerlink" title="5. ament_cmake与ament_cmake_auto:同一条命令的两种写法"></a>5. ament_cmake与ament_cmake_auto:同一条命令的两种写法</h1><h2 id="5-1-两者的关系"><a href="#5-1-两者的关系" class="headerlink" title="5.1 两者的关系"></a>5.1 两者的关系</h2><p><code>ament_cmake_auto</code>不是一个平行的构建系统,它只是<code>ament_cmake</code>上面的一层宏:<code>ament_auto_*</code>这些宏内部仍然是<code>add_library</code>&#x2F;<code>target_link_libraries</code>&#x2F;<code>install</code>&#x2F;<code>ament_target_dependencies</code>。理解这一点,后面所有差异都好解释:</p>
+<ul>
+<li>显式风格要写的东西,auto风格<strong>一个都没少</strong>,只是被宏藏起来了</li>
+<li>auto风格随时可以”手动介入”,直接写原生CMake命令</li>
+<li>用哪套风格由<code>package.xml</code>的<code>&lt;buildtool_depend&gt;</code>决定:<code>ament_cmake</code>还是<code>ament_cmake_auto</code></li>
+</ul>
+<h2 id="5-2-生成目标"><a href="#5-2-生成目标" class="headerlink" title="5.2 生成目标"></a>5.2 生成目标</h2><table>
+<thead>
+<tr>
+<th>要做的事</th>
+<th>显式(<code>ament_cmake</code>)</th>
+<th>自动(<code>ament_cmake_auto</code>)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>建库</td>
+<td><code>add_library(detection_core SHARED src/a.cpp)</code></td>
+<td><code>ament_auto_add_library(detection_core SHARED src/a.cpp)</code></td>
+</tr>
+<tr>
+<td>建可执行</td>
+<td><code>add_executable(demo src/demo.cpp)</code></td>
+<td><code>ament_auto_add_executable(demo src/demo.cpp)</code></td>
+</tr>
+<tr>
+<td>靠目录扫源文件</td>
+<td>自己<code>file(GLOB)</code>(不推荐)</td>
+<td><code>ament_auto_add_library(x SHARED DIRECTORY src)</code></td>
+</tr>
+<tr>
+<td>加头文件目录</td>
+<td><code>target_include_directories(x PUBLIC $&lt;BUILD_INTERFACE:...&gt; $&lt;INSTALL_INTERFACE:include&gt;)</code></td>
+<td>宏自动加,但加的是<strong>源码树裸路径</strong>(坑1)</td>
+</tr>
+<tr>
+<td>链接本包内其它库</td>
+<td>手写<code>target_link_libraries(x PUBLIC other)</code></td>
+<td>宏自动链接<code>${PROJECT_NAME}_LIBRARIES</code>里已有的库</td>
+</tr>
+<tr>
+<td>链接上游依赖</td>
+<td>手写<code>target_link_libraries</code>或<code>ament_target_dependencies</code></td>
+<td>宏内部<code>ament_target_dependencies(x SYSTEM &lt;已找到的build依赖&gt;)</code></td>
+</tr>
+<tr>
+<td>登记目标</td>
+<td>不需要</td>
+<td>自动追加到<code>${PROJECT_NAME}_LIBRARIES</code>&#x2F;<code>${PROJECT_NAME}_EXECUTABLES</code></td>
+</tr>
+</tbody></table>
+<p><code>ament_auto_add_library</code>&#x2F;<code>ament_auto_add_executable</code>内部一共做四件事:</p>
+<ol>
+<li>如果包里有<code>include/</code>目录,<code>target_include_directories(&lt;target&gt; PUBLIC &lt;源码树绝对路径&gt;)</code></li>
+<li>链接本包先前建好的库(可以用<code>NO_TARGET_LINK_LIBRARIES</code>关掉)</li>
+<li><code>ament_target_dependencies(&lt;target&gt; SYSTEM &lt;所有已找到的build依赖&gt;)</code>——注意这个<code>SYSTEM</code>,意思是上游头文件目录以<code>-isystem</code>传入,它们的警告不会算到你头上</li>
+<li>把目标记进<code>${PROJECT_NAME}_LIBRARIES</code>&#x2F;<code>${PROJECT_NAME}_EXECUTABLES</code>,交给<code>ament_auto_package()</code>统一安装</li>
+</ol>
+<p><strong>宏不做的两件事</strong>:不管PIC、不管安装规则。所以<code>set_target_properties(... POSITION_INDEPENDENT_CODE ON)</code>该写还得写(静态库尤其),安装交给<code>ament_auto_package()</code></p>
+<p>顺带一提,这两个宏都有<code>DIRECTORY</code>参数给你省事:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ament_auto_add_library(detection_core SHARED DIRECTORY src)   <span class="comment"># 递归glob src/ 下的 *.c/*.cc/*.cpp/*.cxx</span></span><br></pre></td></tr></table></figure>
+
+<p>但是上面说过,它也是configure期的glob,新增文件不会被感知;要稳定的行为还是老实列文件</p>
+<h2 id="5-3-引用库"><a href="#5-3-引用库" class="headerlink" title="5.3 引用库"></a>5.3 引用库</h2><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>显式风格</th>
+<th>auto风格</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>引用ROS上游包</td>
+<td><code>find_package(driver REQUIRED)</code>+<code>target_link_libraries(x PUBLIC driver::UsbCam)</code></td>
+<td>什么都不用写:<code>&lt;depend&gt;driver&lt;/depend&gt;</code>写好后<code>ament_auto_find_build_dependencies()</code>+宏自动挂上</td>
+</tr>
+<tr>
+<td>引用本包内其它库</td>
+<td><code>target_link_libraries(demo core)</code></td>
+<td>自动(宏把<code>${PROJECT_NAME}_LIBRARIES</code>全链上)</td>
+</tr>
+<tr>
+<td>引用第三方库(<code>OpenCV</code>)</td>
+<td><code>find_package(OpenCV REQUIRED)</code>+<code>target_link_libraries(x PUBLIC ${OpenCV_LIBS})</code></td>
+<td>也要手写,而且<strong>不能用关键字形式</strong>,见下</td>
+</tr>
+<tr>
+<td>引用消息包</td>
+<td><code>${sensor_msgs_TARGETS}</code>或<code>ament_target_dependencies</code></td>
+<td><code>&lt;depend&gt;sensor_msgs&lt;/depend&gt;</code>即可</td>
+</tr>
+</tbody></table>
+<p>第三行是auto风格里最阴的一个坑。因为<code>ament_auto_add_library</code>内部已经用<strong>不带关键字</strong>的形式调过<code>target_link_libraries</code>(只要它真的挂上了某个导出目标的依赖),你之后再写关键字形式就会报错。实测:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">cmake_minimum_required</span>(VERSION <span class="number">3.8</span>)</span><br><span class="line"><span class="keyword">project</span>(mylib)</span><br><span class="line"><span class="keyword">find_package</span>(ament_cmake_auto REQUIRED)</span><br><span class="line">ament_auto_find_build_dependencies()   <span class="comment"># package.xml 里有 &lt;depend&gt;rclcpp&lt;/depend&gt;</span></span><br><span class="line"></span><br><span class="line">ament_auto_add_library(mylib SHARED src/mylib.cpp)</span><br><span class="line"></span><br><span class="line"><span class="keyword">find_package</span>(Threads REQUIRED)</span><br><span class="line"><span class="keyword">target_link_libraries</span>(mylib PUBLIC Threads::Threads)   <span class="comment"># ← 第9行,报错</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">CMake Error at CMakeLists.txt:9 (target_link_libraries):</span><br><span class="line">  The plain signature for target_link_libraries has already been used with</span><br><span class="line">  the target &quot;mylib&quot;.  All uses of target_link_libraries with a target must</span><br><span class="line">  be either all-keyword or all-plain.</span><br></pre></td></tr></table></figure>
+
+<p>改成不带关键字的形式就没事:</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">target_link_libraries</span>(mylib Threads::Threads)   <span class="comment"># 可以</span></span><br></pre></td></tr></table></figure>
+
+<p>判据是”宏内部到底有没有发出带实参的非关键字调用”:如果<code>package.xml</code>里没有任何能提供<code>${pkg}_TARGETS</code>&#x2F;<code>${pkg}_LIBRARIES</code>的依赖(比如纯C++的基础库包),宏的调用是空实参,不会锁定签名,关键字形式依然能写;但只要有一个<code>rclcpp</code>、<code>sensor_msgs</code>这样的依赖被找到,签名就被锁成”非关键字”了。与其记这条规则,不如记结论:<strong>auto风格里给目标补库,就跟宏保持同一种风格(不带关键字)</strong>;要么干脆别在auto包里手动链接,把活留给<code>package.xml</code></p>
+<h2 id="5-4-导出库-两种风格的差别最大"><a href="#5-4-导出库-两种风格的差别最大" class="headerlink" title="5.4 导出库:两种风格的差别最大"></a>5.4 导出库:两种风格的差别最大</h2><table>
+<thead>
+<tr>
+<th>想给下游什么</th>
+<th>显式风格</th>
+<th>auto风格</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>头文件</td>
+<td><code>install(DIRECTORY include/ DESTINATION include)</code>+<code>ament_export_include_directories(include)</code></td>
+<td><code>ament_auto_package()</code>自动(有<code>include/</code>就装、就导出)</td>
+</tr>
+<tr>
+<td>库:现代namespaced目标<code>&lt;pkg&gt;::&lt;target&gt;</code></td>
+<td><code>install(TARGETS t EXPORT &lt;pkg&gt;_export ...)</code>+<code>ament_export_targets(&lt;pkg&gt;_export HAS_LIBRARY_TARGET)</code></td>
+<td><strong>默认没有</strong>,必须自己补这两句</td>
+</tr>
+<tr>
+<td>库:旧式变量<code>${pkg}_LIBRARIES</code></td>
+<td><code>ament_export_libraries(t)</code></td>
+<td><code>ament_auto_package()</code>默认走这条</td>
+</tr>
+<tr>
+<td>传递依赖</td>
+<td><code>ament_export_dependencies(...)</code></td>
+<td><code>ament_auto_package()</code>只导出”既是build依赖又是run依赖”的包</td>
+</tr>
+<tr>
+<td>安装规则</td>
+<td>全手写</td>
+<td><code>ament_auto_package()</code>自动</td>
+</tr>
+</tbody></table>
+<p>也就是说:<strong><code>ament_auto_package()</code>导出的是旧式的<code>${pkg}_LIBRARIES</code>(绝对路径列表),不是现代目标</strong>。下游能用<code>ament_target_dependencies</code>或者<code>target_link_libraries(x ${pkg_LIBRARIES})</code>,但拿不到<code>pkg::target</code>。想要现代目标,就在auto包里自己补上(库的安装规则仍由<code>ament_auto_package()</code>负责,重复装到同一路径无害):</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">install</span>(TARGETS mylib</span><br><span class="line">  <span class="keyword">EXPORT</span> <span class="variable">$&#123;PROJECT_NAME&#125;</span>_export</span><br><span class="line">  ARCHIVE DESTINATION lib</span><br><span class="line">  LIBRARY DESTINATION lib</span><br><span class="line">  RUNTIME DESTINATION bin</span><br><span class="line">)</span><br><span class="line">ament_export_targets(<span class="variable">$&#123;PROJECT_NAME&#125;</span>_export HAS_LIBRARY_TARGET)</span><br></pre></td></tr></table></figure>
+
+<p>两种导出同时存在时,下游<code>find_package</code>后能同时看到现代目标和旧式变量,实测:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">autoprobe_TARGETS      = autoprobe::probelib</span><br><span class="line">autoprobe_LIBRARIES    = /home/xxx/install/autoprobe/lib/libprobelib.so</span><br><span class="line">autoprobe_INCLUDE_DIRS = /home/xxx/install/autoprobe/include</span><br></pre></td></tr></table></figure>
+
+<p>有了<code>autoprobe_TARGETS</code>,<code>ament_target_dependencies</code>会自动走现代路径;没有它,才退回去用<code>${pkg}_LIBRARIES</code></p>
+<h2 id="5-5-auto风格的等价模板"><a href="#5-5-auto风格的等价模板" class="headerlink" title="5.5 auto风格的等价模板"></a>5.5 auto风格的等价模板</h2><p>把§3的模板用auto重写(同样是一个库+一个可执行+测试+完整导出):</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">cmake_minimum_required</span>(VERSION <span class="number">3.8</span>)</span><br><span class="line"><span class="keyword">project</span>(common_libs)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span>(CMAKE_COMPILER_IS_GNUCXX <span class="keyword">OR</span> CMAKE_CXX_COMPILER_ID <span class="keyword">MATCHES</span> <span class="string">&quot;Clang&quot;</span>)</span><br><span class="line">  <span class="keyword">add_compile_options</span>(-Wall -Wextra -Wpedantic)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span>(<span class="keyword">NOT</span> CMAKE_CXX_STANDARD)</span><br><span class="line">  <span class="keyword">set</span>(CMAKE_CXX_STANDARD <span class="number">17</span>)</span><br><span class="line">  <span class="keyword">set</span>(CMAKE_CXX_STANDARD_REQUIRED <span class="keyword">ON</span>)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line"><span class="comment"># ① 一条顶替所有find_package():按package.xml的&lt;depend&gt;/&lt;build_depend&gt;/&lt;buildtool_depend&gt;逐个找</span></span><br><span class="line"><span class="keyword">find_package</span>(ament_cmake_auto REQUIRED)</span><br><span class="line">ament_auto_find_build_dependencies()</span><br><span class="line"></span><br><span class="line"><span class="comment"># ② 建库:自动加include/到PUBLIC、自动链接本包内其它库、自动挂上上一步找到的依赖</span></span><br><span class="line">ament_auto_add_library(common_libs SHARED</span><br><span class="line">  src/math_utils.cpp</span><br><span class="line">  src/string_utils.cpp</span><br><span class="line">)</span><br><span class="line"><span class="keyword">set_target_properties</span>(common_libs PROPERTIES POSITION_INDEPENDENT_CODE <span class="keyword">ON</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ③ 必补:改写成生成器表达式,否则 ④ 的install(EXPORT)直接报错(坑1)</span></span><br><span class="line"><span class="keyword">set_target_properties</span>(common_libs PROPERTIES</span><br><span class="line">  INTERFACE_INCLUDE_DIRECTORIES</span><br><span class="line">    <span class="string">&quot;$&lt;BUILD_INTERFACE:$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/include&gt;;$&lt;INSTALL_INTERFACE:include&gt;&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ④ 现代导出:下游才能用 common_libs::common_libs</span></span><br><span class="line"><span class="keyword">install</span>(TARGETS common_libs</span><br><span class="line">  <span class="keyword">EXPORT</span> <span class="variable">$&#123;PROJECT_NAME&#125;</span>_export</span><br><span class="line">  ARCHIVE DESTINATION lib</span><br><span class="line">  LIBRARY DESTINATION lib</span><br><span class="line">  RUNTIME DESTINATION bin</span><br><span class="line">)</span><br><span class="line">ament_export_targets(<span class="variable">$&#123;PROJECT_NAME&#125;</span>_export HAS_LIBRARY_TARGET)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ⑤ 可执行:自动链接本包所有库,不需要target_link_libraries</span></span><br><span class="line">ament_auto_add_executable(common_libs_demo</span><br><span class="line">  src/common_libs_demo.cpp</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ⑥ 测试</span></span><br><span class="line"><span class="keyword">if</span>(BUILD_TESTING)</span><br><span class="line">  ament_auto_find_test_dependencies()               <span class="comment"># 按&lt;test_depend&gt;找包</span></span><br><span class="line">  ament_auto_add_gtest(common_libs_test <span class="keyword">test</span>/common_libs_test.cpp)</span><br><span class="line"></span><br><span class="line">  <span class="keyword">find_package</span>(ament_lint_auto REQUIRED)</span><br><span class="line">  <span class="keyword">set</span>(AMENT_LINT_AUTO_EXCLUDE ament_cmake_copyright ament_cmake_cpplint)</span><br><span class="line">  ament_lint_auto_find_test_dependencies()</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line"><span class="comment"># ⑦ 一站式收尾:导出依赖 + 装include/与库与可执行 + 装INSTALL_TO_SHARE目录 + 调ament_package()</span></span><br><span class="line">ament_auto_package(</span><br><span class="line">  INSTALL_TO_SHARE config launch</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>对应的<code>package.xml</code>只需把构建工具换掉:</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">buildtool_depend</span>&gt;</span>ament_cmake_auto<span class="tag">&lt;/<span class="name">buildtool_depend</span>&gt;</span>   <span class="comment">&lt;!-- 不是 ament_cmake --&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>auto风格的宏速查:</p>
+<table>
+<thead>
+<tr>
+<th>宏</th>
+<th>作用</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ament_auto_find_build_dependencies([REQUIRED pkg...])</code></td>
+<td>按<code>package.xml</code>找所有build&#x2F;buildtool依赖</td>
+<td><code>REQUIRED</code>列表里的包必须已在<code>package.xml</code>,否则FATAL_ERROR</td>
+</tr>
+<tr>
+<td><code>ament_auto_find_test_dependencies()</code></td>
+<td>按<code>&lt;test_depend&gt;</code>找测试依赖</td>
+<td>不带参数</td>
+</tr>
+<tr>
+<td><code>ament_auto_add_library(&lt;t&gt; [SHARED|STATIC] srcs...)</code></td>
+<td>建库</td>
+<td>追加到<code>${PROJECT_NAME}_LIBRARIES</code></td>
+</tr>
+<tr>
+<td><code>ament_auto_add_executable(&lt;t&gt; srcs...)</code></td>
+<td>建可执行</td>
+<td>追加到<code>${PROJECT_NAME}_EXECUTABLES</code></td>
+</tr>
+<tr>
+<td><code>ament_auto_add_gtest(&lt;t&gt; srcs...)</code></td>
+<td>建gtest目标+链接+注册CTest</td>
+<td>自动链接本包库与测试依赖</td>
+</tr>
+<tr>
+<td><code>ament_auto_package([INSTALL_TO_SHARE d...] [INSTALL_TO_PATH] [USE_SCOPED_HEADER_INSTALL_DIR])</code></td>
+<td>导出依赖、装include&#x2F;库&#x2F;可执行&#x2F;share目录、调<code>ament_package()</code></td>
+<td>用了它就别再手写这些</td>
+</tr>
+</tbody></table>
+<p><code>ament_auto_package()</code>的三个常用参数:</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>INSTALL_TO_SHARE config launch</code></td>
+<td>把<code>config/</code>、<code>launch/</code>装到<code>share/&lt;pkg&gt;/</code></td>
+</tr>
+<tr>
+<td><code>INSTALL_TO_PATH</code></td>
+<td>可执行装到<code>bin/</code>(默认<code>lib/&lt;pkg&gt;/</code>,<code>ros2 run</code>用默认的)</td>
+</tr>
+<tr>
+<td><code>USE_SCOPED_HEADER_INSTALL_DIR</code></td>
+<td>头文件装到<code>include/&lt;pkg&gt;/</code>而不是<code>include/</code></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>注:构建时可能看到这句<strong>提示</strong>(不是错误):<br><code>In this package, headers install destination is set to `include` by ament_auto_package.</code><br>这是提醒你Kilted起默认行为会变成scoped安装。如果你的头文件本来就写成<code>include/&lt;pkg&gt;/xxx.hpp</code>(推荐这么写),保持默认即可;真按提示打开<code>USE_SCOPED_HEADER_INSTALL_DIR</code>反而会变成<code>include/&lt;pkg&gt;/&lt;pkg&gt;/xxx.hpp</code>,<code>#include</code>路径也得跟着改</p>
+</blockquote>
+<h2 id="5-6-auto风格的三个坑"><a href="#5-6-auto风格的三个坑" class="headerlink" title="5.6 auto风格的三个坑"></a>5.6 auto风格的三个坑</h2><p><strong>坑1:<code>ament_auto_add_library</code>把源码树裸路径写进接口,导致<code>install(EXPORT)</code>报错</strong></p>
+<p>宏加头文件目录时用的是<code>${CMAKE_CURRENT_SOURCE_DIR}/include</code>这种绝对路径,而<code>install(EXPORT)</code>不允许导出源码树路径。实测报错:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">CMake Error in CMakeLists.txt:</span><br><span class="line">  Target &quot;probelib&quot; INTERFACE_INCLUDE_DIRECTORIES property contains path:</span><br><span class="line"></span><br><span class="line">    &quot;/home/xxx/src/my_pkg/include&quot;</span><br><span class="line"></span><br><span class="line">  which is prefixed in the source directory.</span><br></pre></td></tr></table></figure>
+
+<p>两种修法:要么不做<code>install(EXPORT)</code>(也就别指望现代导出了,下游只能用<code>${pkg}_LIBRARIES</code>);要么按§5.5的③把接口改写成<code>$&lt;BUILD_INTERFACE:...&gt;</code>&#x2F;<code>$&lt;INSTALL_INTERFACE:include&gt;</code>。既然推荐导出namespaced目标,就老老实实改</p>
+<p><strong>坑2:<code>ament_auto_find_build_dependencies()</code>只认<code>package.xml</code></strong></p>
+<p>它是遍历<code>package.xml</code>里的依赖去<code>find_package</code>,所以:</p>
+<ul>
+<li>传<code>REQUIRED</code>列表时,列表里的包**必须已经写在<code>package.xml</code>**里,否则直接<code>FATAL_ERROR</code></li>
+<li>依赖写漏了不会有任何提示,只会在编译&#x2F;链接期以”找不到头文件”的形式暴露</li>
+<li><code>&lt;depend&gt;libopencv-dev&lt;/depend&gt;</code>这种rosdep key是<code>find_package</code>不到的(§4.2实测),第三方库仍然要自己<code>find_package</code>+链接</li>
+</ul>
+<p><strong>坑3:安装和收尾不能重复</strong></p>
+<ul>
+<li>用了<code>ament_auto_package()</code>就<strong>不要再手写<code>install(TARGETS ...)</code>装库、也不要再写<code>ament_package()</code></strong>。唯一例外是§5.4里为了现代导出而额外补的那段<code>install(TARGETS ... EXPORT)</code>,它只登记EXPORT,路径和auto的一致</li>
+<li><code>ament_auto_package()</code>导出的是”既是build依赖又是run依赖”的包;如果某个公开头文件依赖的包在<code>package.xml</code>里只写成<code>&lt;build_depend&gt;</code>,它不会被导出,下游会缺头文件——这种情况自己补一句<code>ament_export_dependencies(...)</code></li>
+</ul>
+<h2 id="5-7-到底该选哪个"><a href="#5-7-到底该选哪个" class="headerlink" title="5.7 到底该选哪个"></a>5.7 到底该选哪个</h2><table>
+<thead>
+<tr>
+<th>情况</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>纯算法库&#x2F;工具库,依赖简单,只有一个库目标</td>
+<td><code>ament_cmake_auto</code>,省事</td>
+</tr>
+<tr>
+<td>要引用第三方库(OpenCV&#x2F;Eigen&#x2F;CUDA…)</td>
+<td><code>ament_cmake</code>,显式写更清楚,也不受§5.3签名限制</td>
+</tr>
+<tr>
+<td>要导出给下游、会被别的包<code>target_link_libraries</code></td>
+<td><code>ament_cmake</code>更直接(auto也能做,但要额外补两段)</td>
+</tr>
+<tr>
+<td>一个包里有多个库、需要精细控制PUBLIC&#x2F;PRIVATE</td>
+<td><code>ament_cmake</code></td>
+</tr>
+<tr>
+<td>包很多、结构高度一致、想用同一套模板</td>
+<td><code>ament_cmake_auto</code></td>
+</tr>
+</tbody></table>
+<p>不管选哪个,<strong>同一个仓库里要有统一规矩</strong>,比如”基础库用auto,涉及第三方依赖或导出的包用显式”,别今天一个风格明天一个风格。显式风格最大的优点是报错好定位:出问题时你看到的每一行都是自己写的</p>
+<h1 id="6-推荐的功能包设计模式"><a href="#6-推荐的功能包设计模式" class="headerlink" title="6. 推荐的功能包设计模式"></a>6. 推荐的功能包设计模式</h1><p>前面讲的都是”怎么写能编过”,这一节讲”怎么划分才能不用天天改CMake”。这套模式本质上就是一句话:<strong>让每个包的CMake都短到能一眼看完</strong></p>
+<h2 id="6-1-一个包只干一件事-依赖链单向"><a href="#6-1-一个包只干一件事-依赖链单向" class="headerlink" title="6.1 一个包只干一件事,依赖链单向"></a>6.1 一个包只干一件事,依赖链单向</h2><p>工程里最舒服的划分是按”职责层次”分包,每一层只依赖它下面的层:</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">common_libs ─┐</span><br><span class="line">             ├─▶ detection ──▶ (节点包 / 上层业务包)</span><br><span class="line">driver ──────┘</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>common_libs</code>:纯C++工具库(数学、字符串、时间),不依赖ROS,谁都能用</li>
+<li><code>driver</code>:硬件驱动库,输出<code>libUsbCam.so</code>,只依赖OpenCV这类第三方,不掺业务逻辑</li>
+<li><code>detection</code>:业务算法包,链接上面两个,输出”核心库+示例可执行”</li>
+</ul>
+<p>这样分的好处很直接:改驱动不会触发算法重编(只重新链接),单测算法不需要硬件,换相机只动驱动包。反过来,一个包里既有相机驱动又有卡尔曼滤波还有ROS节点,那动一行滤波代码就要重编整个包,而且没法单独测</p>
+<p><strong>依赖绝对不要成环</strong>。colcon按<code>package.xml</code>做拓扑排序,显式成环会直接报<code>Circular dependency</code>;而”靠CMake侥幸编过”的隐性环,表现为全量构建时随机失败,非常难查</p>
+<h2 id="6-2-核心库与节点分离"><a href="#6-2-核心库与节点分离" class="headerlink" title="6.2 核心库与节点分离"></a>6.2 核心库与节点分离</h2><p>同一个业务包里,建议再分两层:</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">include/detection/camera_grabber.hpp   ← 纯算法/逻辑,不 #include &lt;rclcpp/rclcpp.hpp&gt;</span><br><span class="line">src/camera_grabber.cpp                 → libdetection_core.so</span><br><span class="line">src/usb_camera_demo.cpp                → usb_camera_demo(示例可执行)</span><br><span class="line">src/detection_node.cpp                 → detection_node(ROS节点,以后再加)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>核心库<strong>不依赖rclcpp</strong>(头文件里不出现<code>#include &lt;rclcpp/rclcpp.hpp&gt;</code>):可以脱离ROS环境编译、可以写不需要<code>rclcpp::init</code>的单元测试、可以被其它不带ROS的工程复用</li>
+<li>节点层要薄:只做参数声明、话题收发、把数据递给核心库,不写算法</li>
+<li>代价只是多一个<code>add_library</code>+<code>add_executable</code>,收益是”算法可测、可复用、编译快”</li>
+</ul>
+<p>以后加了节点,<code>package.xml</code>里补<code>&lt;depend&gt;rclcpp&lt;/depend&gt;</code>,CMake里<code>find_package(rclcpp REQUIRED)</code>并<code>target_link_libraries(detection_node detection_core rclcpp::rclcpp)</code>即可,<strong>核心库一行都不用改</strong></p>
+<h2 id="6-3-头文件、库名与命名空间"><a href="#6-3-头文件、库名与命名空间" class="headerlink" title="6.3 头文件、库名与命名空间"></a>6.3 头文件、库名与命名空间</h2><ul>
+<li>头文件统一放<code>include/&lt;pkg&gt;/xxx.hpp</code>,<code>install</code>到<code>include/</code>(不打开<code>USE_SCOPED_HEADER_INSTALL_DIR</code>),于是<code>#include &quot;detection/camera_grabber.hpp&quot;</code>在源码树里和安装后都成立;每个包的头文件都有自己的目录前缀,合并安装时不会互相污染</li>
+<li>库目标名要和包名有明显关联(<code>detection_core</code>、<code>UsbCam</code>),导出后的命名空间是包名(<code>detection::detection_core</code>、<code>driver::UsbCam</code>),下游一眼就能看出这个库是从哪来的</li>
+<li>C++侧再套一层自己的命名空间(比如<code>gugauav::detection</code>)是锦上添花,能避免和别人的<code>CameraGrabber</code>撞名</li>
+</ul>
+<h2 id="6-4-参数与资源-一律进share-代码里用ament-index取"><a href="#6-4-参数与资源-一律进share-代码里用ament-index取" class="headerlink" title="6.4 参数与资源:一律进share/,代码里用ament index取"></a>6.4 参数与资源:一律进<code>share/</code>,代码里用ament index取</h2><ul>
+<li>可调参数不要写死在代码里,也不要编译进二进制:<code>config/*.yaml</code>装到<code>share/&lt;pkg&gt;/config/</code>,<code>launch/*.py</code>装到<code>share/&lt;pkg&gt;/launch/</code></li>
+<li>代码里用<code>ament_index_cpp::get_package_share_directory(&quot;&lt;pkg&gt;&quot;)</code>取路径;源码树路径只在”没安装直接跑”时当兜底,可以用<code>target_compile_definitions</code>编进目标</li>
+<li><code>--symlink-install</code>下这些文件是软链接,改完yaml不用重编,调参体验会好很多</li>
+<li>传感器内外参、模型文件这类”很大又很久不变”的资源,可以放工程的<code>assets/</code>,由<code>scripts/</code>拷贝或由launch引用,<strong>不要</strong>塞进功能包</li>
+</ul>
+<h2 id="6-5-测试-单测不要硬件"><a href="#6-5-测试-单测不要硬件" class="headerlink" title="6.5 测试:单测不要硬件"></a>6.5 测试:单测不要硬件</h2><ul>
+<li>每个库配一个gtest,<code>ament_add_gtest</code>注册,<code>target_link_libraries</code>只链被测的那个库</li>
+<li>涉及硬件的部分(相机、串口)不要进单测,把”解析配置””未打开设备时的行为”这类纯逻辑抽出来测;真机验证交给<code>scripts/</code>里的脚本</li>
+<li>测试数据路径用<code>target_compile_definitions</code>编进目标,不要在测试代码里写相对路径</li>
+</ul>
+<h2 id="6-6-自查清单"><a href="#6-6-自查清单" class="headerlink" title="6.6 自查清单"></a>6.6 自查清单</h2><p>写完一个包,过一遍这几条基本不会出大问题:</p>
+<ol>
+<li><code>project()</code>的名字和<code>package.xml</code>的<code>&lt;name&gt;</code>一致吗?</li>
+<li><code>package.xml</code>里的<code>&lt;depend&gt;</code>覆盖了所有<code>find_package</code>的上游包吗?(colcon靠它排顺序)</li>
+<li>第三方库的rosdep key写了吗?(是<code>libopencv-dev</code>,不是<code>OpenCV</code>)</li>
+<li>每个库都开PIC了吗?(静态库尤其要注意)</li>
+<li>公开头文件用到的依赖都用<code>PUBLIC</code>链接、并且在<code>ament_export_dependencies</code>里导出了吗?</li>
+<li>要导出的库,<code>install(TARGETS ... EXPORT ...)</code>和<code>ament_export_targets(...)</code>是不是成对出现了?</li>
+<li>可执行装到<code>lib/${PROJECT_NAME}</code>了吗?(<code>ros2 run</code>找不找得到)</li>
+<li>用了<code>ament_auto_package()</code>的话,有没有重复写<code>install</code>&#x2F;<code>ament_package()</code>?</li>
+<li>lint排除项用的是<code>AMENT_LINT_AUTO_EXCLUDE</code>吗?</li>
+<li>构建完<code>ldd</code>看一眼下游库,运行期依赖真的挂上了吗?</li>
+</ol>
+<h1 id="7-报错速查"><a href="#7-报错速查" class="headerlink" title="7. 报错速查"></a>7. 报错速查</h1><table>
+<thead>
+<tr>
+<th>报错&#x2F;现象</th>
+<th>原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Target &quot;x&quot; INTERFACE_INCLUDE_DIRECTORIES property contains path ... which is prefixed in the source directory</code></td>
+<td><code>ament_auto_add_library</code>把源码树裸路径放进了接口,同时又<code>install(EXPORT)</code></td>
+<td>改写成<code>$&lt;BUILD_INTERFACE:...&gt;</code>&#x2F;<code>$&lt;INSTALL_INTERFACE:include&gt;</code>,或不做现代导出(坑1)</td>
+</tr>
+<tr>
+<td><code>ament_auto_find_build_dependencies() called with required packages that are not listed as a build/buildtool dependency in the package.xml</code></td>
+<td>auto只认<code>package.xml</code></td>
+<td>往<code>package.xml</code>补<code>&lt;depend&gt;</code>,或去掉<code>REQUIRED</code>列表</td>
+</tr>
+<tr>
+<td><code>must be either all-keyword or all-plain</code></td>
+<td>同一目标上关键字与非关键字<code>target_link_libraries</code>混用(可能来自<code>ament_target_dependencies</code>或auto宏)</td>
+<td>统一成一种;auto包里补库时用不带关键字的形式</td>
+</tr>
+<tr>
+<td><code>ament_target_dependencies() the passed package name &#39;x&#39; was not found before</code></td>
+<td>没先<code>find_package</code></td>
+<td>补<code>find_package(x REQUIRED)</code></td>
+</tr>
+<tr>
+<td><code>ament_target_dependencies() SYSTEM keyword is only allowed before the package names</code></td>
+<td>关键字写到包名后面了</td>
+<td>改成<code>ament_target_dependencies(t SYSTEM pkg)</code></td>
+</tr>
+<tr>
+<td>下游<code>find_package(driver)</code>成功但没有<code>driver::UsbCam</code></td>
+<td>上游没登记<code>EXPORT</code>,或没调<code>ament_export_targets</code></td>
+<td>上游补<code>install(TARGETS ... EXPORT ...)</code>+<code>ament_export_targets(... HAS_LIBRARY_TARGET)</code></td>
+</tr>
+<tr>
+<td>下游编译报”找不到上游头文件里的依赖”(比如OpenCV头)</td>
+<td>上游漏了<code>ament_export_dependencies(OpenCV)</code></td>
+<td>补上,<code>package.xml</code>也要有对应的<code>&lt;depend&gt;</code></td>
+</tr>
+<tr>
+<td><code>ament_package()</code>没被调用&#x2F;被调用了两次</td>
+<td>用了<code>ament_auto_package()</code>又手写<code>ament_package()</code></td>
+<td>二选一</td>
+</tr>
+<tr>
+<td><code>error while loading shared libraries: libUsbCam.so: cannot open shared object file</code></td>
+<td>运行期没<code>source install/setup.bash</code>,或上游没装库</td>
+<td><code>source install/setup.bash</code>;用<code>ldd</code>定位</td>
+</tr>
+<tr>
+<td><code>ros2 run &lt;pkg&gt; &lt;exe&gt;</code>找不到可执行</td>
+<td><code>RUNTIME DESTINATION</code>不是<code>lib/${PROJECT_NAME}</code></td>
+<td>按§4.5改安装路径</td>
+</tr>
+<tr>
+<td><code>relocation R_X86_64_PC32 ... can not be used when making a shared object</code></td>
+<td>目标没开PIC</td>
+<td><code>set_target_properties(t PROPERTIES POSITION_INDEPENDENT_CODE ON)</code></td>
+</tr>
+<tr>
+<td>copyright&#x2F;cpplint用例莫名出现并失败</td>
+<td>包模板里的<code>set(ament_cmake_copyright_FOUND TRUE)</code>在Humble不可靠</td>
+<td>改用<code>set(AMENT_LINT_AUTO_EXCLUDE ament_cmake_copyright ament_cmake_cpplint)</code></td>
+</tr>
+<tr>
+<td>单包能编,全量<code>colcon build</code>顺序错乱</td>
+<td><code>package.xml</code>缺依赖,colcon排不出拓扑</td>
+<td>依赖写全,<code>rosdep install --from-paths src --ignore-src -r -y</code></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>注:本文所有报错原文、<code>_TARGETS</code>&#x2F;<code>_LIBRARIES</code>的取值以及导出的落地文件,都在ROS 2 Humble上实测过;文中的<code>driver</code>&#x2F;<code>common_libs</code>&#x2F;<code>detection</code>三个包正好分别对应”显式风格+第三方依赖””auto风格基础库””显式风格+链接两个上游”三种典型场景,读者可以直接把它们当成模板的三种填法</p>
+</blockquote>
+
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://example.com/2026/09/10/how-to-use-colcon/" data-id="cuidTbgKIkjoJmBoORAymJto7" data-title="how-to-use-colcon" class="article-share-link"><span class="fa fa-share">Share</span></a>
-      
-      
-      
-    </footer>
-  </div>
-  
-</article>
-
-
-
-  
-    <article id="post-hello-world" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
-  <div class="article-meta">
-    <a href="/2026/09/10/hello-world/" class="article-date">
-  <time class="dt-published" datetime="2026-09-10T13:17:06.406Z" itemprop="datePublished">2026-09-10</time>
-</a>
-    
-  </div>
-  <div class="article-inner">
-    
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="p-name article-title" href="/2026/09/10/hello-world/">Hello World</a>
-    </h1>
-  
-
-      </header>
-    
-    <div class="e-content article-entry" itemprop="articleBody">
-      
-        <p>Welcome to <a target="_blank" rel="noopener" href="https://hexo.io/">Hexo</a>! This is your very first post. Check <a target="_blank" rel="noopener" href="https://hexo.io/docs/">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a target="_blank" rel="noopener" href="https://hexo.io/docs/troubleshooting.html">troubleshooting</a> or you can ask me on <a target="_blank" rel="noopener" href="https://github.com/hexojs/hexo/issues">GitHub</a>.</p>
-<h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">&quot;My New Post&quot;</span></span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/writing.html">Writing</a></p>
-<h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/server.html">Server</a></p>
-<h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/generating.html">Generating</a></p>
-<h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure>
-
-<p>More info: <a target="_blank" rel="noopener" href="https://hexo.io/docs/one-command-deployment.html">Deployment</a></p>
-
-      
-    </div>
-    <footer class="article-footer">
-      <a data-url="http://example.com/2026/09/10/hello-world/" data-id="cuidyCz_56sr-ffS17PRZU3tY" data-title="Hello World" class="article-share-link"><span class="fa fa-share">Share</span></a>
+      <a data-url="http://example.com/2026/09/10/how-to-use-colcon/" data-id="cuidTbgKIkjoJmBoORAymJto7" data-title="如何优雅的使用&#34;colcon &amp; ament_cmake&#34;构建一个C++工程" class="article-share-link"><span class="fa fa-share">Share</span></a>
       
       
       
@@ -192,11 +753,7 @@
       <ul>
         
           <li>
-            <a href="/2026/09/10/how-to-use-colcon/">how-to-use-colcon</a>
-          </li>
-        
-          <li>
-            <a href="/2026/09/10/hello-world/">Hello World</a>
+            <a href="/2026/09/10/how-to-use-colcon/">如何优雅的使用&#34;colcon &amp; ament_cmake&#34;构建一个C++工程</a>
           </li>
         
       </ul>
